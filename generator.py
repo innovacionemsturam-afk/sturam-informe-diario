@@ -96,7 +96,7 @@ def generate_report_json(
     }
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         contents=json.dumps(user_prompt, ensure_ascii=False),
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
