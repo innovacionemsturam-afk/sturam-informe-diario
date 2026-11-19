@@ -2,10 +2,11 @@
 
 import json
 import os
+import time
 from typing import Any
 
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 
 from config import REGIONS_ORDER, MAX_NEWS_PER_EDITION
 
@@ -95,14 +96,27 @@ def generate_report_json(
         },
     }
 
-    response = client.models.generate_content(
-        model="gemini-3.8-flash",
-        contents=json.dumps(user_prompt, ensure_ascii=False),
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
-            response_mime_type="application/json",
-            temperature=0.2,
-        ),
-    )
+    models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite"]
+    last_exc: Exception | None = None
 
-    return json.loads(response.text)
+    for model_name in models_to_try:
+        for attempt in range(3):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=json.dumps(user_prompt, ensure_ascii=False),
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        response_mime_type="application/json",
+                        temperature=0.2,
+                    ),
+                )
+                return json.loads(response.text)
+            except errors.APIError as exc:
+                last_exc = exc
+                if getattr(exc, "code", None) in (429, 500, 503):
+                    time.sleep(10 * (attempt + 1))
+                    continue
+                raise
+
+    raise RuntimeError(f"No se pudo generar el informe tras reintentos: {last_exc}")
