@@ -14,6 +14,7 @@ from qa_check import run_qa_checks
 BASE_DIR = Path(__file__).resolve().parent
 HISTORY_PATH = BASE_DIR / "history.json"
 OUTPUT_DIR = BASE_DIR / "output"
+LOGO_PATH = BASE_DIR / "assets" / "logo_sturam.png"
 
 MONTHS_ES = [
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -125,7 +126,8 @@ def main() -> None:
             is_first_monday=is_first_monday,
         )
 
-    html_body = render_report_html(report)
+    has_logo = LOGO_PATH.exists()
+    html_body = render_report_html(report, has_logo=has_logo)
 
     if args.test_to:
         to_list = [args.test_to]
@@ -167,6 +169,7 @@ def main() -> None:
             html_body=html_body,
             to_addrs=to_list,
             cc_addrs=cc_list,
+            logo_path=LOGO_PATH if has_logo else None,
         )
         print(f"Correo enviado exitosamente. Message-ID: {msg_id}")
 

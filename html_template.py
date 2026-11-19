@@ -20,7 +20,7 @@ def _badge_color(impact_type: str) -> tuple[str, str]:
     return ("#fef7e0", "#b06000")
 
 
-def render_report_html(report: dict[str, Any]) -> str:
+def render_report_html(report: dict[str, Any], has_logo: bool = False) -> str:
     """Renderiza el informe completo en HTML listo para el cuerpo de Gmail."""
     edition_date = escape(report.get("edition_date", ""))
     summary_bullets = report.get("strategic_summary", [])
@@ -169,15 +169,24 @@ def render_report_html(report: dict[str, Any]) -> str:
           <!-- A. ENCABEZADO -->
           <tr>
             <td style="background-color:#102e48;padding:20px 24px;color:#ffffff;">
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:21px;font-weight:bold;letter-spacing:0.6px;text-transform:uppercase;margin:0;">
-                INFORME ESTRATÉGICO DIARIO
-              </div>
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;color:#cbd5e1;margin-top:4px;">
-                STURAM S.A.
-              </div>
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:12.5px;color:#e2e8f0;margin-top:6px;">
-                {edition_date}
-              </div>
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="vertical-align:middle;">
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:21px;font-weight:bold;letter-spacing:0.6px;text-transform:uppercase;margin:0;">
+                      INFORME ESTRATÉGICO DIARIO
+                    </div>
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;color:#cbd5e1;margin-top:4px;">
+                      STURAM S.A.
+                    </div>
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:12.5px;color:#e2e8f0;margin-top:6px;">
+                      {edition_date}
+                    </div>
+                  </td>
+                  {'''<td align="right" style="vertical-align:middle;width:150px;">
+                    <img src="cid:sturam_logo" alt="STURAM S.A." style="max-height:54px;max-width:140px;display:block;border:0;" />
+                  </td>''' if has_logo else ""}
+                </tr>
+              </table>
             </td>
           </tr>
 
