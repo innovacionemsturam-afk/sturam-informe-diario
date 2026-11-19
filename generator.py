@@ -39,6 +39,26 @@ REGLAS INQUEBRANTABLES:
 """
 
 
+def _discover_fallback_models(client: genai.Client, exclude: str) -> list[str]:
+    """Lista modelos disponibles en la cuenta que soporten generateContent."""
+    candidates: list[str] = []
+    try:
+        for m in client.models.list():
+            name = (getattr(m, "name", "") or "").replace("models/", "")
+            actions = getattr(m, "supported_actions", None) or []
+            if not name or name == exclude or "embedding" in name:
+                continue
+            if actions and "generateContent" not in actions:
+                continue
+            if "gemini" in name:
+                candidates.append(name)
+    except Exception:
+        pass
+    # Priorizar modelos flash recientes
+    candidates.sort(key=lambda n: (0 if "flash" in n else 1, n), reverse=False)
+    return candidates[:4]
+
+
 def generate_report_json(
     bundle: dict[str, Any],
     edition_date_human: str,
@@ -96,7 +116,9 @@ def generate_report_json(
         },
     }
 
-    models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite"]
+    models_to_try = ["gemini-3.8-flash"]
+    discovered = _discover_fallback_models(client, exclude="gemini-3.8-flash")
+    models_to_try.extend(discovered)
     last_exc: Exception | None = None
 
     for model_name in models_to_try:
@@ -114,9 +136,12 @@ def generate_report_json(
                 return json.loads(response.text)
             except errors.APIError as exc:
                 last_exc = exc
-                if getattr(exc, "code", None) in (429, 500, 503):
+                code = getattr(exc, "code", None)
+                if code in (429, 500, 503):
                     time.sleep(10 * (attempt + 1))
                     continue
+                if code == 404:
+                    break
                 raise
 
     raise RuntimeError(f"No se pudo generar el informe tras reintentos: {last_exc}")
