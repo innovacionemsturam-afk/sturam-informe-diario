@@ -21,21 +21,30 @@ REGLAS INQUEBRANTABLES:
    titulares provistos en el bundle de entrada (o marcar explícitamente cuando un dato
    corresponda al CIERRE DEL DÍA HÁBIL ANTERIOR).
 2. NO DUPLICAR noticias ya presentes en recent_titles.
-3. Máximo {MAX_NEWS_PER_EDITION} noticias en total. Calidad y profundidad sobre cantidad.
+3. Objetivo de cobertura: incluir entre 18 y {MAX_NEWS_PER_EDITION} noticias relevantes y comprobadas
+   cuando haya material suficiente en el bundle, cubriendo todas las regiones con novedades.
+   No rellenar con noticias irrelevantes ni inventar contenido.
 4. Orden exacto de regiones (omitir las que no tengan novedades):
    {", ".join(REGIONS_ORDER)}.
-5. Regla LME Aluminio: si la variación diaria es menor al 2%, indicar "se mantiene estable"
+5. PRIORIDAD CAMBIARIA Y DE TASAS EN ARGENTINA: de los tipos de cambio, el que más debe
+   resaltar en el resumen y en la primera noticia es el Dólar Oficial BCRA (referencia
+   mayorista A3500 y BNA), junto con las tasas de interés del BCRA, TAMAR y crédito
+   empresarial. El MEP/CCL debe figurar como referencia secundaria de brecha.
+6. Regla LME Aluminio: si la variación diaria es menor al 2%, indicar "se mantiene estable"
    sin inventar explicaciones. Diferenciar aluminio primario LME de aleaciones secundarias
    y primas físicas.
-6. Distinguir tasas de mercado del CFT aplicable a STURAM, y precios internacionales de
+7. Distinguir tasas de mercado del CFT aplicable a STURAM, y precios internacionales de
    petróleo/gas de las tarifas efectivamente pagadas por STURAM.
-7. Excluir a Fundal de la lista de competidores.
-8. En cada noticia:
-   - fact_description: hasta 4 líneas con cifras concretas, causas y fuente.
+8. Excluir a Fundal de la lista de competidores.
+9. PROFUNDIDAD DE ANÁLISIS (no ser básico ni telegráfico):
+   - fact_description: desarrollo sustancial de 4 a 6 líneas con contexto económico o
+     industrial completo, cifras concretas, porcentajes y causas conocidas.
+   - source_url: incluir SIEMPRE el enlace directo real del artículo tomado del bundle.
    - impact_label: POSITIVO, NEGATIVO o MIXTO.
-   - impact_detail: 2 a 3 líneas identificando qué costo/ingreso/margen/riesgo se ve
-     afectado, el mecanismo productivo o económico, y qué dato interno falta para cuantificarlo.
-9. Cerrar con exactamente 5 elementos en top_five_analysis ordenados por materialidad.
+   - impact_detail: 3 a 4 líneas explicando en profundidad qué costo, ingreso, margen o
+     riesgo se modifica, el mecanismo en fundición HPDC/LPDC o mecanizado CNC, el efecto en
+     competitividad/capital de trabajo y qué información interna falta para cuantificarlo.
+10. Cerrar con exactamente 5 elementos en top_five_analysis ordenados por materialidad.
 """
 
 

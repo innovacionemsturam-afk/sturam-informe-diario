@@ -78,8 +78,8 @@ def render_report_html(report: dict[str, Any], has_logo: bool = False) -> str:
               </tr>
               <tr>
                 <td style="padding:0 0 6px 0;font-family:Arial,Helvetica,sans-serif;font-size:12.5px;color:#111827;line-height:1.45;">
-                  <strong style="color:#102e48;">DESCRIPCIÓN DEL HECHO:</strong> {fact}
-                  &nbsp;<a href="{source_url}" style="color:#0648c8;text-decoration:underline;font-size:11.5px;">[{source_name}]</a>
+                  <strong style="color:#102e48;">DESCRIPCIÓN DEL HECHO:</strong> {fact}<br/>
+                  <a href="{source_url}" target="_blank" style="color:#0648c8;text-decoration:underline;font-size:11.5px;font-weight:bold;">Leer artículo completo en {source_name} &rarr;</a>
                 </td>
               </tr>
               <tr>

@@ -56,22 +56,19 @@ REGIONS_ORDER = [
 
 MAX_NEWS_PER_EDITION = 30
 
-# Clientes actuales y potenciales a monitorear (Sección 8)
-CLIENTS_WATCHLIST = [
-    "Volkswagen",
-    "Stellantis",
-    "Mercedes-Benz",
-    "Daimler Truck",
-    "IVECO",
-    "Toyota",
-    "Volvo",
-    "ZF",
-    "Renault",
-    "General Motors",
-    "Ford",
-    "Tesla",
-    "BYD",
-]
+# Clientes actuales y potenciales a monitorear por región
+CLIENTS_BY_REGION = {
+    "Argentina": ["Toyota", "Renault", "Volkswagen", "Stellantis", "Ford", "Mercedes-Benz", "Iveco"],
+    "Brasil": ["Volkswagen", "Stellantis", "General Motors", "Toyota", "Hyundai", "BYD", "Renault", "Scania"],
+    "México": ["General Motors", "Ford", "Stellantis", "Nissan", "Volkswagen", "BMW", "Toyota", "Tesla"],
+    "Estados Unidos": ["Tesla", "General Motors", "Ford", "Rivian", "Lucid"],
+    "Europa": ["Volkswagen Group", "BMW", "Mercedes-Benz", "Stellantis", "Renault", "Volvo", "JLR"],
+    "China": ["BYD", "Geely", "Chery", "SAIC", "XPeng", "NIO", "Li Auto"],
+    "India": ["Tata Motors", "Mahindra", "Maruti Suzuki", "Hyundai", "Bajaj Auto"],
+    "Japón y Corea": ["Toyota", "Honda", "Nissan", "Hyundai", "Kia", "Mazda", "Subaru"],
+}
+
+CLIENTS_WATCHLIST = sorted({c for clients in CLIENTS_BY_REGION.values() for c in clients})
 
 # Competidores de fundición HPDC/LPDC/Gravedad (Fundal excluida por regla)
 COMPETITORS_WATCHLIST = [
