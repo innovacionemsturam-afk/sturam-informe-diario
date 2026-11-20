@@ -39,24 +39,52 @@ REGLAS INQUEBRANTABLES:
 """
 
 
+EXCLUDED_MODEL_TAGS = (
+    "embedding",
+    "image",
+    "tts",
+    "audio",
+    "live",
+    "robotics",
+    "computer-use",
+    "veo",
+    "imagen",
+    "customtools",
+    "bisect",
+)
+
+PREFERRED_MODELS = [
+    "gemini-3.8-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3-flash-preview",
+    "gemini-2.0-flash",
+    "gemini-2.5-pro",
+    "gemini-3.8-pro",
+]
+
+
 def _discover_fallback_models(client: genai.Client, exclude: str) -> list[str]:
-    """Lista modelos disponibles en la cuenta que soporten generateContent."""
-    candidates: list[str] = []
+    """Lista modelos de texto disponibles en la cuenta que soporten generateContent."""
+    available: set[str] = set()
     try:
         for m in client.models.list():
             name = (getattr(m, "name", "") or "").replace("models/", "")
             actions = getattr(m, "supported_actions", None) or []
-            if not name or name == exclude or "embedding" in name:
+            if not name or name == exclude:
+                continue
+            if any(tag in name for tag in EXCLUDED_MODEL_TAGS):
                 continue
             if actions and "generateContent" not in actions:
                 continue
             if "gemini" in name:
-                candidates.append(name)
+                available.add(name)
     except Exception:
         pass
-    # Priorizar modelos flash recientes
-    candidates.sort(key=lambda n: (0 if "flash" in n else 1, n), reverse=False)
-    return candidates[:4]
+
+    ordered = [m for m in PREFERRED_MODELS if m in available and m != exclude]
+    remaining = sorted(m for m in available if m not in ordered)
+    return (ordered + remaining)[:6]
 
 
 def generate_report_json(
@@ -137,8 +165,11 @@ def generate_report_json(
             except errors.APIError as exc:
                 last_exc = exc
                 code = getattr(exc, "code", None)
+                msg = str(exc)
+                if code == 429 and "limit: 0" in msg:
+                    break
                 if code in (429, 500, 503):
-                    time.sleep(10 * (attempt + 1))
+                    time.sleep(8 * (attempt + 1))
                     continue
                 if code == 404:
                     break
