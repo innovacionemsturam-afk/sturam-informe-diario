@@ -69,6 +69,8 @@ CLIENTS_WATCHLIST = [
     "Renault",
     "General Motors",
     "Ford",
+    "Tesla",
+    "BYD",
 ]
 
 # Competidores de fundición HPDC/LPDC/Gravedad (Fundal excluida por regla)
@@ -82,4 +84,26 @@ COMPETITORS_WATCHLIST = [
     "Handtmann",
     "Ryobi",
     "Gibbs",
+    "GF Casting Solutions",
+]
+
+# Tecnología de fundición, Robótica e Industria 4.0
+FOUNDRY_TECH_WATCHLIST = [
+    "Bühler Group",
+    "LK Machinery",
+    "IDRA Group",
+    "Italpresse Gauss",
+    "YIZUMI",
+]
+
+ROBOTICS_AND_I40_WATCHLIST = [
+    "ABB Robotics",
+    "FANUC",
+    "KUKA",
+    "Yaskawa",
+    "Universal Robots",
+    "Siemens",
+    "Rockwell Automation",
+    "Schneider Electric",
+    "NVIDIA",
 ]
