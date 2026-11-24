@@ -7,20 +7,20 @@ on:
       - 'history.json'
   schedule:
     # Ventanas 05:15, 05:45 y 06:15 America/Argentina/Cordoba (UTC-3), lunes a viernes.
-    # Si la primera sale a tiempo, las siguientes ven history.json y terminan en 1s sin reenviar.
     - cron: '15 8 * * 1-5'
     - cron: '45 8 * * 1-5'
     - cron: '15 9 * * 1-5'
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Modo de ejecucion: test (envia solo a GMAIL_SENDER) o send (envia a los 17 destinatarios)'
+        description: 'Modo de ejecucion: test (envia solo a GMAIL_SENDER), send (17 destinatarios) o force-send (reenvia hoy a los 17)'
         required: true
         default: 'test'
         type: choice
         options:
           - test
           - send
+          - force-send
 
 permissions:
   contents: write
@@ -43,16 +43,19 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          RUN_MODE: ${{ github.event.inputs.mode || 'send' }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_MODE: ${{ github.event.inputs.mode }}
         run: |
-          if [ "$RUN_MODE" = "test" ]; then
+          if [ "$EVENT_NAME" = "push" ] || [ "$INPUT_MODE" = "test" ]; then
             python main.py --test-to "$GMAIL_SENDER"
+          elif [ "$INPUT_MODE" = "force-send" ]; then
+            python main.py --send --force
           else
             python main.py --send
           fi
 
       - name: Guardar historial anti-duplicados
-        if: ${{ (github.event.inputs.mode || 'send') == 'send' }}
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.mode == 'send' || github.event.inputs.mode == 'force-send' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
