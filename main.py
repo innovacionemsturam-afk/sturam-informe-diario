@@ -111,6 +111,11 @@ def main() -> None:
 
     history = load_history()
 
+    if args.send and not args.dry_run and not args.test_to:
+        if date_iso in set(history.get("sent_dates", [])):
+            print(f"La edición {date_iso} ya fue enviada hoy. Se omite para evitar duplicados.")
+            return
+
     if args.sample:
         report = build_sample_report(edition_human, date_slash)
     else:

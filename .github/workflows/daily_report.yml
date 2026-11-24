@@ -2,8 +2,11 @@ name: Informe Estrategico Diario STURAM
 
 on:
   schedule:
-    # 08:15 UTC = 05:15 America/Argentina/Cordoba (UTC-3), lunes a viernes
+    # Ventanas 05:15, 05:45 y 06:15 America/Argentina/Cordoba (UTC-3), lunes a viernes.
+    # Si la primera sale a tiempo, las siguientes ven history.json y terminan en 1s sin reenviar.
     - cron: '15 8 * * 1-5'
+    - cron: '45 8 * * 1-5'
+    - cron: '15 9 * * 1-5'
   workflow_dispatch:
     inputs:
       mode:
