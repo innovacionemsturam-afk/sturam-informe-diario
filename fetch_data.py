@@ -89,9 +89,9 @@ def extract_article_excerpt(url: str, timeout: int = 6) -> str:
                 for bad in ("cookies", "suscrib", "iniciar sesión", "registr", "todos los derechos")
             ):
                 good_paras.append(txt)
-            if len(good_paras) >= 3:
+            if len(good_paras) >= 2:
                 break
-        return " ".join(good_paras)[:900]
+        return " ".join(good_paras)[:480]
     except Exception:
         return ""
 
@@ -574,11 +574,11 @@ def collect_daily_bundle(
 
         feed_futures = {}
         for key, q in bing_queries.items():
-            feed_futures[pool.submit(fetch_bing_news_rss, q, 5, max_age_h)] = key
+            feed_futures[pool.submit(fetch_bing_news_rss, q, 3, max_age_h)] = key
         for key, (q, hl, gl) in gn_queries.items():
-            feed_futures[pool.submit(fetch_google_news_rss, q, hl, gl, 5, max_age_h)] = key
+            feed_futures[pool.submit(fetch_google_news_rss, q, hl, gl, 3, max_age_h)] = key
         for key, (url, src) in direct_rss.items():
-            feed_futures[pool.submit(fetch_rss_feed, url, src, 5, max_age_h)] = key
+            feed_futures[pool.submit(fetch_rss_feed, url, src, 3, max_age_h)] = key
 
         argentina_data = fut_arg.result()
         brasil_data = fut_bra.result()

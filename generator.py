@@ -12,9 +12,11 @@ from google.genai import errors, types
 
 from config import MAX_NEWS_PER_EDITION, REGIONS_ORDER
 
-# Excluir modelos lite, imagen, audio y especializados para evitar respuestas truncadas
+# Excluir modelos de imagen, audio, video y especializados (permitir lite como respaldo final)
 EXCLUDED_MODEL_TAGS = (
-    "lite",
+    "2.5",
+    "2.0",
+    "1.5",
     "embedding",
     "image",
     "tts",
@@ -29,11 +31,10 @@ EXCLUDED_MODEL_TAGS = (
 )
 
 PREFERRED_MODELS = [
-    "gemini-2.5-flash",
     "gemini-3.8-flash",
-    "gemini-2.5-pro",
     "gemini-3.8-pro",
-    "gemini-3-flash-preview",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
 ]
 
 SYSTEM_INSTRUCTION = f"""
@@ -97,8 +98,9 @@ REGLAS OBLIGATORIAS DE COBERTURA Y VOLUMEN:
 
 
 def _discover_fallback_models(client: genai.Client, exclude: str) -> list[str]:
-    """Lista modelos completos (no lite) disponibles que soporten generateContent."""
-    available: set[str] = set()
+    """Lista modelos disponibles en la cuenta (primero estándar, luego lite como respaldo)."""
+    standard: set[str] = set()
+    lite_models: set[str] = set()
     try:
         for m in client.models.list():
             name = (getattr(m, "name", "") or "").replace("models/", "")
@@ -110,13 +112,17 @@ def _discover_fallback_models(client: genai.Client, exclude: str) -> list[str]:
             if actions and "generateContent" not in actions:
                 continue
             if "gemini" in name.lower():
-                available.add(name)
+                if "lite" in name.lower():
+                    lite_models.add(name)
+                else:
+                    standard.add(name)
     except Exception:
         pass
 
-    ordered = [m for m in PREFERRED_MODELS if m in available and m != exclude]
-    remaining = sorted(m for m in available if m not in ordered)
-    return (ordered + remaining)[:5]
+    ordered = [m for m in PREFERRED_MODELS if m in standard and m != exclude]
+    rem_std = sorted((m for m in standard if m not in ordered), reverse=True)
+    rem_lite = sorted(lite_models, reverse=True)
+    return (ordered + rem_std + rem_lite)[:8]
 
 
 def generate_report_json(
@@ -174,15 +180,16 @@ def generate_report_json(
         },
     }
 
-    models_to_try = ["gemini-2.5-flash", "gemini-3.8-flash"]
-    for m in _discover_fallback_models(client, exclude=""):
+    models_to_try = ["gemini-3.8-flash"]
+    for m in _discover_fallback_models(client, exclude="gemini-3.8-flash"):
         if m not in models_to_try:
             models_to_try.append(m)
 
     last_exc: Exception | None = None
+    best_partial: dict[str, Any] | None = None
 
     for model_name in models_to_try:
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 print(f"Generando informe con modelo: {model_name} (intento {attempt + 1})...")
                 response = client.models.generate_content(
@@ -198,6 +205,8 @@ def generate_report_json(
                 data = json.loads(response.text)
                 stories_count = len(data.get("stories", []))
                 print(f"Modelo {model_name} generó {stories_count} noticias.")
+                if best_partial is None or stories_count > len(best_partial.get("stories", [])):
+                    best_partial = data
                 if stories_count < 12:
                     last_exc = RuntimeError(
                         f"El modelo {model_name} devolvió solo {stories_count} noticias (<12)."
@@ -211,7 +220,7 @@ def generate_report_json(
                 if code == 429 and "limit: 0" in msg:
                     break
                 if code in (429, 500, 503):
-                    time.sleep(8 * (attempt + 1))
+                    time.sleep(5 * (attempt + 1))
                     continue
                 if code == 404:
                     break
@@ -220,4 +229,6 @@ def generate_report_json(
                 last_exc = exc
                 continue
 
+    if best_partial and len(best_partial.get("stories", [])) >= 8:
+        return best_partial
     raise RuntimeError(f"No se pudo generar el informe completo tras reintentos: {last_exc}")
