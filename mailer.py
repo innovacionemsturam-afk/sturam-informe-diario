@@ -36,7 +36,7 @@ def send_html_email(
 ) -> str:
     """Envía el correo con cuerpo HTML + CID y adjunta el archivo .html compartible."""
     sender = os.environ.get("GMAIL_SENDER", "innovacion.emsturam@gmail.com")
-    app_password = os.environ.get("GMAIL_APP_PASSWORD")
+    app_password = (os.environ.get("GMAIL_APP_PASSWORD") or "").replace(" ", "")
     if not app_password:
         raise RuntimeError(
             "Falta GMAIL_APP_PASSWORD en variables de entorno para envío autónomo en la nube."

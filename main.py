@@ -3,6 +3,7 @@
 import argparse
 from datetime import datetime, timedelta
 import json
+import os
 from pathlib import Path
 
 from config import EMAIL_CC, EMAIL_TO, PLAIN_TEXT_ALT, SUBJECT_PREFIX, TZ_CORDOBA
@@ -12,9 +13,22 @@ from mailer import build_standalone_html, send_html_email
 from qa_check import run_qa_checks
 
 BASE_DIR = Path(__file__).resolve().parent
+ENV_PATH = BASE_DIR / ".env"
 HISTORY_PATH = BASE_DIR / "history.json"
 OUTPUT_DIR = BASE_DIR / "output"
 LOGO_PATH = BASE_DIR / "assets" / "logo_sturam.png"
+
+
+def load_dotenv_file() -> None:
+    """Carga variables clave=valor desde .env si existe."""
+    if not ENV_PATH.exists():
+        return
+    for raw in ENV_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 MONTHS_ES = [
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -114,6 +128,7 @@ def build_sample_report(edition_human: str, closing_slash: str) -> dict:
 
 
 def main() -> None:
+    load_dotenv_file()
     parser = argparse.ArgumentParser(description="Informe Estratégico Diario STURAM S.A.")
     parser.add_argument("--dry-run", action="store_true", help="Genera HTML local sin enviar correo.")
     parser.add_argument("--sample", action="store_true", help="Usa datos de muestra para probar plantilla HTML.")
