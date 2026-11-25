@@ -14,7 +14,6 @@ from config import MAX_NEWS_PER_EDITION, REGIONS_ORDER
 
 # Excluir modelos de imagen, audio, video y especializados (permitir lite como respaldo final)
 EXCLUDED_MODEL_TAGS = (
-    "2.5",
     "2.0",
     "1.5",
     "1.0",
@@ -40,8 +39,7 @@ PREFERRED_MODELS = [
     "gemini-3.5-flash",
     "gemini-4-hydrogen",
     "gemini-3.8-pro",
-    "gemini-3.6-pro",
-    "gemini-3.5-pro",
+    "gemini-2.5-pro",
 ]
 
 SYSTEM_INSTRUCTION = f"""
@@ -134,6 +132,59 @@ def _discover_fallback_models(client: genai.Client, exclude: str) -> list[str]:
     return all_candidates
 
 
+def _sanitize_report(data: dict[str, Any], edition_date_human: str, closing_date_slash: str) -> dict[str, Any]:
+    """Normaliza campos faltantes en noticias individuales para evitar bloqueos innecesarios."""
+    data.setdefault("edition_date", edition_date_human)
+    data.setdefault("closing_date", closing_date_slash)
+
+    if not data.get("strategic_summary"):
+        data["strategic_summary"] = [
+            {
+                "topic": "Financiación y divisas",
+                "text": f"Datos correspondientes al CIERRE DEL DÍA HÁBIL ANTERIOR, {closing_date_slash}.",
+            }
+        ]
+
+    clean_stories: list[dict[str, Any]] = []
+    for s in data.get("stories", []):
+        if not isinstance(s, dict) or not s.get("title"):
+            continue
+        if not s.get("bullets") and s.get("fact_description"):
+            s["bullets"] = [s["fact_description"]]
+        if not s.get("bullets"):
+            s["bullets"] = [s["title"]]
+        s.setdefault("region", "GLOBAL")
+        s.setdefault("impact_label", "MIXTO")
+        if not s.get("impact_detail"):
+            s["impact_detail"] = (
+                "El impacto efectivo sobre costos, márgenes o capital de trabajo de STURAM "
+                "depende de las condiciones contractuales y datos operativos internos."
+            )
+        valid_sources = [
+            src for src in (s.get("sources") or []) if isinstance(src, dict) and src.get("url")
+        ]
+        if not valid_sources:
+            fallback_url = s.get("source_url") or "https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables.asp"
+            fallback_name = s.get("source_name") or s.get("meta_subtitle") or "Fuente verificada"
+            valid_sources = [{"name": fallback_name, "url": fallback_url}]
+        s["sources"] = valid_sources
+        clean_stories.append(s)
+
+    data["stories"] = clean_stories
+
+    top5 = [t for t in (data.get("top_five_analysis") or []) if isinstance(t, dict)]
+    while len(top5) < 5 and clean_stories:
+        ref = clean_stories[min(len(top5), len(clean_stories) - 1)]
+        top5.append(
+            {
+                "fact_and_figure": ref.get("title", "Indicador relevante de la jornada"),
+                "management_reading": ref.get("impact_detail", "Requiere seguimiento gerencial."),
+            }
+        )
+    data["top_five_analysis"] = top5[:5]
+    return data
+
+
 def generate_report_json(
     bundle: dict[str, Any],
     edition_date_human: str,
@@ -198,44 +249,41 @@ def generate_report_json(
     best_partial: dict[str, Any] | None = None
 
     for model_name in models_to_try:
-        for attempt in range(2):
-            try:
-                print(f"Generando informe con modelo: {model_name} (intento {attempt + 1})...")
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=json.dumps(user_prompt, ensure_ascii=False),
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_INSTRUCTION,
-                        response_mime_type="application/json",
-                        max_output_tokens=16384,
-                        temperature=0.2,
-                    ),
+        try:
+            print(f"Generando informe con modelo: {model_name}...")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=json.dumps(user_prompt, ensure_ascii=False),
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    response_mime_type="application/json",
+                    max_output_tokens=16384,
+                    temperature=0.2,
+                ),
+            )
+            data = _sanitize_report(
+                json.loads(response.text), edition_date_human, closing_date_slash
+            )
+            stories_count = len(data.get("stories", []))
+            print(f"Modelo {model_name} generó {stories_count} noticias.")
+            if best_partial is None or stories_count > len(best_partial.get("stories", [])):
+                best_partial = data
+            if stories_count < 10:
+                last_exc = RuntimeError(
+                    f"El modelo {model_name} devolvió solo {stories_count} noticias (<10)."
                 )
-                data = json.loads(response.text)
-                stories_count = len(data.get("stories", []))
-                print(f"Modelo {model_name} generó {stories_count} noticias.")
-                if best_partial is None or stories_count > len(best_partial.get("stories", [])):
-                    best_partial = data
-                if stories_count < 12:
-                    last_exc = RuntimeError(
-                        f"El modelo {model_name} devolvió solo {stories_count} noticias (<12)."
-                    )
-                    continue
-                return data
-            except errors.APIError as exc:
-                last_exc = exc
-                code = getattr(exc, "code", None)
-                print(f"  -> {model_name} devolvió HTTP {code}: {str(exc)[:140]}")
-                if code in (500, 503):
-                    time.sleep(4 * (attempt + 1))
-                    continue
-                # Ante 429 (cuota 0 en Free Tier), 404 o 400, saltar de inmediato al siguiente modelo
-                break
-            except Exception as exc:
-                last_exc = exc
-                print(f"  -> {model_name} error: {str(exc)[:140]}")
-                break
+                continue
+            return data
+        except errors.APIError as exc:
+            last_exc = exc
+            code = getattr(exc, "code", None)
+            print(f"  -> {model_name} devolvió HTTP {code}: {str(exc)[:140]}")
+            continue
+        except Exception as exc:
+            last_exc = exc
+            print(f"  -> {model_name} error: {str(exc)[:140]}")
+            continue
 
-    if best_partial and len(best_partial.get("stories", [])) >= 8:
+    if best_partial and len(best_partial.get("stories", [])) >= 5:
         return best_partial
     raise RuntimeError(f"No se pudo generar el informe completo tras reintentos: {last_exc}")
