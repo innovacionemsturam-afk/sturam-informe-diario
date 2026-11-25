@@ -46,6 +46,7 @@ def previous_business_day(dt: datetime) -> datetime:
 def build_sample_report(edition_human: str, closing_slash: str) -> dict:
     """Genera un informe de muestra con la estructura aprobada del 18/11/2026."""
     return {
+        "_is_sample": True,
         "edition_date": edition_human,
         "closing_date": closing_slash,
         "strategic_summary": [

@@ -46,7 +46,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_MODE: ${{ github.event.inputs.mode }}
         run: |
-          if [ "$INPUT_MODE" = "test" ]; then
+          if [ "$EVENT_NAME" = "push" ] || [ "$INPUT_MODE" = "test" ]; then
             python main.py --test-to "$GMAIL_SENDER"
           elif [ "$INPUT_MODE" = "force-send" ]; then
             python main.py --send --force
@@ -55,7 +55,7 @@ jobs:
           fi
 
       - name: Guardar historial anti-duplicados
-        if: ${{ github.event.inputs.mode != 'test' }}
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.mode == 'send' || github.event.inputs.mode == 'force-send' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

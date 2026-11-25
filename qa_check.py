@@ -38,6 +38,10 @@ def run_qa_checks(
     total_news = len(stories)
     if total_news == 0:
         errors.append("El informe no contiene noticias desarrolladas.")
+    elif not report.get("_is_sample") and total_news < 12:
+        errors.append(
+            f"Cobertura insuficiente: solo se generaron {total_news} noticias (mínimo 12 recorriendo las regiones)."
+        )
     if total_news > MAX_NEWS_PER_EDITION:
         errors.append(
             f"Excede el máximo de {MAX_NEWS_PER_EDITION} noticias ({total_news})."

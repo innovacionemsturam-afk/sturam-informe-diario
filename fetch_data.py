@@ -1,13 +1,15 @@
 """Recolección de indicadores oficiales (BCRA, BCB SML, Westmetall LME, Yahoo)
-y noticias sectoriales (AutoData, Automotive Business, EUROGUSS, RSS), con
-filtrado anti-duplicación duro en código antes de invocar al modelo.
+y noticias sectoriales (AutoData, Bing News RSS con snippet + URL real, Google
+News RSS, Ámbito, OilPrice, EIA), incluyendo extracción de párrafos del cuerpo
+de cada artículo y filtrado anti-duplicación en código.
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
+import html as html_lib
 import json
 import re
 import ssl
@@ -58,9 +60,40 @@ def is_duplicate_title(candidate_title: str, recent_titles: list[str]) -> bool:
             continue
         inter = cand_tokens & old_tokens
         overlap = len(inter) / min(len(cand_tokens), len(old_tokens))
-        if overlap >= 0.42 or len(inter) >= 4:
+        if overlap >= 0.45 or len(inter) >= 4:
             return True
     return False
+
+
+def extract_article_excerpt(url: str, timeout: int = 6) -> str:
+    """Descarga la página del artículo y extrae los primeros párrafos informativos."""
+    if not url or "news.google.com" in url:
+        return ""
+    try:
+        raw_html = _get_text(url, timeout=timeout)
+        # Eliminar scripts, styles, nav, header, footer
+        cleaned = re.sub(
+            r"<(script|style|nav|header|footer|aside)[^>]*>.*?</\1>",
+            " ",
+            raw_html,
+            flags=re.S | re.I,
+        )
+        paragraphs = re.findall(r"<p[^>]*>(.*?)</p>", cleaned, flags=re.S | re.I)
+        good_paras: list[str] = []
+        for p in paragraphs:
+            txt = html_lib.unescape(re.sub(r"<[^>]+>", " ", p))
+            txt = re.sub(r"\s+", " ", txt).strip()
+            # Filtrar párrafos reales con oraciones informativas
+            if len(txt) >= 85 and "." in txt and not any(
+                bad in txt.lower()
+                for bad in ("cookies", "suscrib", "iniciar sesión", "registr", "todos los derechos")
+            ):
+                good_paras.append(txt)
+            if len(good_paras) >= 3:
+                break
+        return " ".join(good_paras)[:900]
+    except Exception:
+        return ""
 
 
 def fetch_westmetall_lme() -> dict[str, Any]:
@@ -170,7 +203,6 @@ def fetch_bcra_principales_variables() -> dict[str, Any]:
 def fetch_argentina_indicators() -> dict[str, Any]:
     """Obtiene cotizaciones de dólar, A3500, tasas BCRA, riesgo país e inflación."""
     result: dict[str, Any] = {"warnings": []}
-
     try:
         dolares = _get_json("https://dolarapi.com/v1/dolares")
         result["dolares"] = [
@@ -254,7 +286,7 @@ def fetch_commodities() -> dict[str, Any]:
 
 
 def fetch_autodata_direct(max_items: int = 8) -> list[dict[str, str]]:
-    """Extrae las últimas noticias directamente de AutoData Brasil."""
+    """Extrae las últimas noticias y su cuerpo directamente de AutoData Brasil."""
     url = "https://www.autodata.com.br/"
     items: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -285,13 +317,59 @@ def fetch_autodata_direct(max_items: int = 8) -> list[dict[str, str]]:
     return items
 
 
+def fetch_bing_news_rss(
+    query: str, max_items: int = 5, max_age_hours: int = 72
+) -> list[dict[str, str]]:
+    """Consulta Bing News RSS obteniendo snippet informativo real y URL directa del medio."""
+    url = f'https://www.bing.com/news/search?q={quote(query)}&qft=interval%3d%228%22&format=rss'
+    items: list[dict[str, str]] = []
+    now_utc = datetime.now(TZ_CORDOBA)
+    try:
+        xml_text = _get_text(url, timeout=10)
+        root = ET.fromstring(xml_text)
+        for item in root.findall("./channel/item"):
+            title = item.findtext("title", "").strip()
+            raw_link = item.findtext("link", "").strip()
+            pub_date = item.findtext("pubDate", "").strip()
+            desc = html_lib.unescape(re.sub(r"<[^>]+>", " ", item.findtext("description", "")))
+            desc = re.sub(r"\s+", " ", desc).strip()
+
+            q_params = parse_qs(urlparse(raw_link).query)
+            real_url = q_params.get("url", [raw_link])[0]
+            domain = urlparse(real_url).netloc.replace("www.", "")
+
+            if pub_date:
+                try:
+                    dt = parsedate_to_datetime(pub_date)
+                    age_h = (now_utc - dt.astimezone(TZ_CORDOBA)).total_seconds() / 3600.0
+                    if age_h > max_age_hours:
+                        continue
+                except Exception:
+                    pass
+            if title and real_url:
+                items.append(
+                    {
+                        "title": title,
+                        "snippet": desc[:400],
+                        "link": real_url,
+                        "pubDate": pub_date,
+                        "source": domain or "Bing News",
+                    }
+                )
+            if len(items) >= max_items:
+                break
+    except Exception:
+        pass
+    return items
+
+
 def fetch_rss_feed(
     url: str,
     default_source: str,
     max_items: int = 5,
-    max_age_hours: int = 48,
+    max_age_hours: int = 60,
 ) -> list[dict[str, str]]:
-    """Lee un feed RSS filtrando artículos viejos."""
+    """Lee un feed RSS filtrando artículos antiguos."""
     items: list[dict[str, str]] = []
     now_utc = datetime.now(TZ_CORDOBA)
     try:
@@ -301,8 +379,8 @@ def fetch_rss_feed(
             title = item.findtext("title", "").strip()
             link = item.findtext("link", "").strip()
             pub_date = item.findtext("pubDate", "").strip()
-            desc = re.sub(r"<[^>]+>", " ", item.findtext("description", "")).strip()
-            desc = re.sub(r"\s+", " ", desc)[:280]
+            desc = html_lib.unescape(re.sub(r"<[^>]+>", " ", item.findtext("description", "")))
+            desc = re.sub(r"\s+", " ", desc).strip()[:360]
             source_el = item.find("source")
             source = (
                 source_el.text.strip()
@@ -339,9 +417,9 @@ def fetch_google_news_rss(
     hl: str = "es-419",
     gl: str = "AR",
     max_items: int = 5,
-    max_age_hours: int = 48,
+    max_age_hours: int = 60,
 ) -> list[dict[str, str]]:
-    """Consulta titulares recientes en Google News RSS con filtro de antigüedad."""
+    """Consulta titulares recientes en Google News RSS."""
     ceid = f"{gl}:{'es-419' if hl.startswith('es') else 'en'}"
     url = f"https://news.google.com/rss/search?q={quote(query)}&hl={hl}&gl={gl}&ceid={ceid}"
     return fetch_rss_feed(
@@ -349,18 +427,43 @@ def fetch_google_news_rss(
     )
 
 
+def _enrich_with_excerpts(items: list[dict[str, str]], max_to_enrich: int = 3) -> list[dict[str, str]]:
+    """Extrae los primeros párrafos reales del artículo para los primeros candidatos."""
+    for idx, it in enumerate(items):
+        if idx < max_to_enrich and it.get("link") and "news.google.com" not in it["link"]:
+            excerpt = extract_article_excerpt(it["link"])
+            if excerpt:
+                it["article_excerpt"] = excerpt
+    return items
+
+
 def collect_daily_bundle(
     recent_titles: list[str] | None = None,
     recent_urls: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Reúne indicadores oficiales y noticias frescas deduplicadas contra history.json."""
+    """Reúne indicadores oficiales y noticias con cuerpo/snippet deduplicadas por región."""
     now = datetime.now(TZ_CORDOBA)
     is_monday = now.weekday() == 0
-    max_age_h = 80 if is_monday else 42
+    max_age_h = 84 if is_monday else 54
     when_tag = "when:3d" if is_monday else "when:2d"
 
     prev_titles = recent_titles or []
     prev_urls = set(recent_urls or [])
+
+    # Consultas Bing News RSS (traen snippet real con cifras + URL directa al diario)
+    bing_queries: dict[str, str] = {
+        "ARGENTINA_ECONOMIA_INDUSTRIA": "UIA OR ADIMRA OR ADEFA OR AFAC OR BCRA industria metalurgica automotriz Argentina",
+        "CORDOBA_Y_GREMIOS": "Cordoba UOM OR SMATA OR metalurgica OR automotriz OR Iveco OR Renault OR Stellantis",
+        "BRASIL_AUTOMOTRIZ": "ANFAVEA OR Sindipeças OR Volkswagen OR Toyota OR Stellantis OR BYD producao Brasil",
+        "LATINOAMERICA_MEXICO": "Mexico automotriz planta autopartes Nissan OR General Motors OR Ford OR Stellantis OR Tesla",
+        "ESTADOS_UNIDOS_INDUSTRIA": "US automaker plant tariffs General Motors OR Ford OR Tesla OR Stellantis manufacturing",
+        "EUROPA_AUTOMOTRIZ_ENERGIA": "Europe automotive plant production Volkswagen OR Mercedes-Benz OR BMW OR Stellantis OR Renault OR TTF gas",
+        "CHINA_AUTOMOTRIZ": "China automaker BYD OR Geely OR Chery OR SAIC OR GAC production exports supplier",
+        "INDIA_Y_ASIA": "India Japan Korea automaker Tata Motors OR Mahindra OR Maruti Suzuki OR Toyota OR Hyundai production",
+        "FUNDICION_HPDC_COMPETIDORES": "aluminum die casting HPDC Nemak OR Handtmann OR Buhler OR Ryobi OR Ahresty OR foundry",
+        "IA_ROBOTICA_MANUFACTURA": "industrial robotics AI manufacturing ABB OR FANUC OR KUKA OR Siemens OR Rockwell OR CNC automation",
+        "PETROLEO_GAS_FLETES": "Brent WTI oil price OPEC shipping freight Red Sea LNG energy market",
+    }
 
     gn_queries: dict[str, tuple[str, str, str]] = {
         "ARGENTINA_FINANZAS": (
@@ -368,23 +471,13 @@ def collect_daily_bundle(
             "es-419",
             "AR",
         ),
-        "ARGENTINA_AUTOMOTRIZ": (
-            f"(ADEFA OR AFAC OR ADIMRA) produccion exportacion metalurgia automotriz Argentina {when_tag}",
-            "es-419",
-            "AR",
-        ),
         "CORDOBA": (
-            f'(Cordoba OR "Las Varillas" OR "San Francisco") (UOM OR SMATA OR metalurgica OR automotriz OR Pauny OR Iveco OR Renault OR Stellantis OR Volkswagen) {when_tag}',
-            "es-419",
-            "AR",
-        ),
-        "GREMIOS": (
-            f"(UOM OR SMATA) (paritaria OR conflicto OR paro OR conciliacion OR automotriz OR metalurgica) Argentina {when_tag}",
+            f'(Cordoba OR "San Francisco" OR "Las Varillas") (UOM OR SMATA OR metalurgica OR automotriz OR Iveco OR Renault OR Stellantis) {when_tag}',
             "es-419",
             "AR",
         ),
         "BRASIL": (
-            f'(ANFAVEA OR ABIFA OR Sindipeças OR AutoData OR "Automotive Business" OR Volkswagen OR Toyota OR Stellantis OR BYD OR GAC) Brasil {when_tag}',
+            f'(ANFAVEA OR ABIFA OR Sindipeças OR AutoData OR "Automotive Business" OR Volkswagen OR Toyota OR Stellantis OR BYD) Brasil {when_tag}',
             "pt-BR",
             "BR",
         ),
@@ -393,84 +486,58 @@ def collect_daily_bundle(
             "es-419",
             "MX",
         ),
-        "EEUU_AUTOMOTRIZ": (
-            f'(Tesla OR "General Motors" OR Ford OR Rivian OR Stellantis) manufacturing plant supplier tariffs {when_tag}',
+        "EUROPA_FUNDICION_Y_AUTOS": (
+            f'(Volkswagen OR BMW OR "Mercedes-Benz" OR Stellantis OR Renault OR EUROGUSS OR Handtmann) Europe production {when_tag}',
             "en-US",
             "US",
         ),
-        "EUROPA_AUTOMOTRIZ": (
-            f'("Volkswagen" OR BMW OR "Mercedes-Benz" OR Stellantis OR Renault OR Volvo OR JLR OR EUROGUSS) Europe plant production aluminum {when_tag}',
+        "CHINA_AUTOS_Y_ALUMINIO": (
+            f'(BYD OR Geely OR Chery OR SAIC OR Gasgoo OR SHFE) China aluminum automotive {when_tag}',
             "en-US",
             "US",
         ),
-        "CHINA_AUTOMOTRIZ": (
-            f'(BYD OR Geely OR Chery OR SAIC OR GAC OR Gasgoo OR Caixin) automaker supplier production export {when_tag}',
+        "INDIA_ASIA_AUTOS": (
+            f'("Tata Motors" OR Mahindra OR "Maruti Suzuki" OR "ACMA India" OR Toyota OR Hyundai) manufacturing {when_tag}',
             "en-US",
             "US",
         ),
-        "INDIA_ASIA_AUTOMOTRIZ": (
-            f'("Tata Motors" OR Mahindra OR "Maruti Suzuki" OR "ACMA India" OR "Autocar Professional" OR Toyota OR Honda OR Hyundai) manufacturing {when_tag}',
-            "en-US",
-            "US",
-        ),
-        "ALUMINIO_LME": (
-            f'(LME OR SHFE OR "London Metal Exchange") (aluminum OR aluminium) price inventory premium {when_tag}',
-            "en-US",
-            "US",
-        ),
-        "ASOCIACIONES_Y_COMPETIDORES_FUNDICION": (
-            f'(Nemak OR "Bocar" OR Ahresty OR Ryobi OR "GF Casting" OR Handtmann OR "CIE Automotive" OR "Foundry-Planet" OR EUROGUSS OR NADCA OR "Buhler" OR IDRA) die casting HPDC aluminum when:4d',
-            "en-US",
-            "US",
-        ),
-        "IA_Y_ROBOTICA_INDUSTRIAL": (
-            f'("ABB Robotics" OR FANUC OR KUKA OR Yaskawa OR "Universal Robots" OR Siemens OR "Rockwell Automation" OR NVIDIA OR CNC OR "predictive maintenance" OR "industrial AI") manufacturing {when_tag}',
-            "en-US",
-            "US",
-        ),
-        "ENERGIA_PETROLEO_Y_GAS": (
-            f'(Brent OR WTI OR OPEC OR "TTF gas" OR "Horumuz" OR "U.S. EIA" OR IEA) oil gas industrial energy {when_tag}',
-            "en-US",
-            "US",
-        ),
-        "LOGISTICA_Y_GEOPOLITICA": (
-            f'(Freightos OR "Red Sea" OR "Black Sea" OR sanctions OR tariffs OR pig iron OR steel OR aluminum) shipping trade {when_tag}',
-            "en-US",
-            "US",
-        ),
-        "SOSTENIBILIDAD_INDUSTRIAL": (
-            f'("recycled aluminum" OR "low carbon aluminum" OR CBAM OR COP31 OR electrification) industrial manufacturing {when_tag}',
+        "IA_Y_ROBOTICA": (
+            f'("ABB Robotics" OR FANUC OR KUKA OR Yaskawa OR Siemens OR "Rockwell Automation" OR NVIDIA OR CNC) manufacturing {when_tag}',
             "en-US",
             "US",
         ),
     }
 
     direct_rss: dict[str, tuple[str, str]] = {
-        "OILPRICE": ("https://oilprice.com/rss/main", "OilPrice"),
-        "US_EIA": ("https://www.eia.gov/rss/todayinenergy.xml", "U.S. EIA"),
+        "AMBITO_ECONOMIA": ("https://www.ambito.com/rss/pages/economia.xml", "Ámbito"),
+        "OILPRICE_ENERGIA": ("https://oilprice.com/rss/main", "OilPrice"),
+        "US_EIA_ENERGIA": ("https://www.eia.gov/rss/todayinenergy.xml", "U.S. EIA"),
+        "BBC_WORLD_GLOBAL": ("https://feeds.bbci.co.uk/news/world/rss.xml", "BBC World"),
     }
 
     news_by_topic: dict[str, list[dict[str, str]]] = {}
 
-    with ThreadPoolExecutor(max_workers=10) as pool:
+    with ThreadPoolExecutor(max_workers=12) as pool:
         fut_arg = pool.submit(fetch_argentina_indicators)
         fut_bra = pool.submit(fetch_brazil_indicators)
         fut_com = pool.submit(fetch_commodities)
         fut_autodata = pool.submit(fetch_autodata_direct, 8)
 
-        rss_futures = {}
+        feed_futures = {}
+        for key, q in bing_queries.items():
+            feed_futures[pool.submit(fetch_bing_news_rss, q, 5, max_age_h)] = key
         for key, (q, hl, gl) in gn_queries.items():
-            rss_futures[pool.submit(fetch_google_news_rss, q, hl, gl, 6, max_age_h)] = key
+            feed_futures[pool.submit(fetch_google_news_rss, q, hl, gl, 5, max_age_h)] = key
         for key, (url, src) in direct_rss.items():
-            rss_futures[pool.submit(fetch_rss_feed, url, src, 5, max_age_h)] = key
+            feed_futures[pool.submit(fetch_rss_feed, url, src, 5, max_age_h)] = key
 
         argentina_data = fut_arg.result()
         brasil_data = fut_bra.result()
         commodities_data = fut_com.result()
         autodata_items = fut_autodata.result()
 
-        for fut in as_completed(rss_futures):
-            topic = rss_futures[fut]
+        for fut in as_completed(feed_futures):
+            topic = feed_futures[fut]
             raw_items = fut.result()
             filtered: list[dict[str, str]] = []
             for it in raw_items:
@@ -481,13 +548,22 @@ def collect_daily_bundle(
                 filtered.append(it)
             news_by_topic[topic] = filtered
 
-    # Sumar AutoData directo deduplicado
-    news_by_topic["BRASIL_AUTODATA_DIRECTO"] = [
-        it
-        for it in autodata_items
-        if it.get("link") not in prev_urls
-        and not is_duplicate_title(it.get("title", ""), prev_titles)
-    ]
+        # Enriquecer con párrafos reales del cuerpo del artículo en paralelo
+        autodata_clean = [
+            it
+            for it in autodata_items
+            if it.get("link") not in prev_urls
+            and not is_duplicate_title(it.get("title", ""), prev_titles)
+        ]
+        news_by_topic["BRASIL_AUTODATA_DIRECTO"] = autodata_clean
+
+        enrich_futs = [
+            pool.submit(_enrich_with_excerpts, items, 2)
+            for items in news_by_topic.values()
+            if items
+        ]
+        for ef in as_completed(enrich_futs):
+            ef.result()
 
     return {
         "collected_at": now.isoformat(),
