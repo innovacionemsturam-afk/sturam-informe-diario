@@ -8,7 +8,7 @@ from pathlib import Path
 from config import EMAIL_CC, EMAIL_TO, PLAIN_TEXT_ALT, SUBJECT_PREFIX, TZ_CORDOBA
 from fetch_data import collect_daily_bundle
 from html_template import render_report_html
-from mailer import send_html_email
+from mailer import build_standalone_html, send_html_email
 from qa_check import run_qa_checks
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -190,7 +190,10 @@ def main() -> None:
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out_file = OUTPUT_DIR / f"informe_{date_iso}.html"
-    out_file.write_text(html_body, encoding="utf-8")
+    out_file.write_text(
+        build_standalone_html(html_body, LOGO_PATH if has_logo else None),
+        encoding="utf-8",
+    )
     print(f"HTML generado correctamente en: {out_file}")
 
     if args.dry_run:
@@ -198,6 +201,7 @@ def main() -> None:
         return
 
     if args.test_to or args.send:
+        attach_name = f"Informe_Estrategico_STURAM_{date_iso}.html"
         msg_id = send_html_email(
             subject=subject,
             plain_text=PLAIN_TEXT_ALT,
@@ -205,6 +209,7 @@ def main() -> None:
             to_addrs=to_list,
             cc_addrs=cc_list,
             logo_path=LOGO_PATH if has_logo else None,
+            attach_html_filename=attach_name,
         )
         print(f"Correo enviado exitosamente. Message-ID: {msg_id}")
 

@@ -177,23 +177,37 @@ def fetch_bcb_sml_rates() -> dict[str, Any]:
 
 
 def fetch_bcra_principales_variables() -> dict[str, Any]:
-    """Extrae TAMAR, Adelantos, BADLAR y Tipo de Cambio de la web oficial del BCRA."""
-    url = "https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables.asp"
-    out: dict[str, Any] = {"source_url": url, "variables": []}
+    """Obtiene TAMAR, BADLAR, Adelantos, A3500 y Reservas de la API oficial v4.0 del BCRA."""
+    url = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias"
+    wanted_ids = {
+        1: "Reservas internacionales (USD millones)",
+        4: "Tipo de cambio minorista promedio vendedor (ARS/USD)",
+        5: "Tipo de cambio mayorista de referencia A3500 (ARS/USD)",
+        7: "Tasa de interés BADLAR bancos privados (% TNA)",
+        35: "Tasa de interés BADLAR bancos privados (% TEA)",
+        44: "Tasa de interés TAMAR bancos privados (% TNA)",
+        45: "Tasa de interés TAMAR bancos privados (% TEA)",
+        13: "Tasa de interés por adelantos en cuenta corriente (% TNA)",
+        145: "Tasa de adelantos en cuenta corriente a empresas >10M (% TNA)",
+    }
+    out: dict[str, Any] = {
+        "source_url": "https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables.asp",
+        "api_url": url,
+        "variables": [],
+    }
     try:
-        html = _get_text(url, timeout=12)
-        rows = re.findall(r"<tr[^>]*>.*?</tr>", html, re.S)
-        for r in rows:
-            cells = [
-                re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", c)).strip()
-                for c in re.findall(r"<td[^>]*>(.*?)</td>", r, re.S)
-            ]
-            if len(cells) >= 3 and any(
-                k in cells[0].lower()
-                for k in ("tamar", "adelantos", "badlar", "mayorista", "minorista", "reservas", "política")
-            ):
+        data = _get_json(url, timeout=12)
+        for item in data.get("results", []):
+            vid = item.get("idVariable")
+            if vid in wanted_ids:
                 out["variables"].append(
-                    {"name": cells[0], "date": cells[1], "value": cells[2]}
+                    {
+                        "id": vid,
+                        "name": wanted_ids[vid],
+                        "official_description": item.get("descripcion"),
+                        "date": item.get("ultFechaInformada"),
+                        "value": item.get("ultValorInformado"),
+                    }
                 )
     except Exception as exc:
         out["warning"] = str(exc)
@@ -309,6 +323,37 @@ def fetch_autodata_direct(max_items: int = 8) -> list[dict[str, str]]:
                 )
                 items.append(
                     {"title": title, "link": link, "pubDate": pub_d, "source": "AutoData"}
+                )
+            if len(items) >= max_items:
+                break
+    except Exception:
+        pass
+    return items
+
+
+def fetch_gasgoo_direct(max_items: int = 6) -> list[dict[str, str]]:
+    """Extrae las últimas noticias directamente de Gasgoo China Automotive News."""
+    url = "https://autonews.gasgoo.com/"
+    items: list[dict[str, str]] = []
+    seen: set[str] = set()
+    try:
+        html = _get_text(url, timeout=12)
+        for m in re.finditer(
+            r'href="(https?://autonews\.gasgoo\.com/[^"]+\.html)"[^>]*>(.*?)</a>',
+            html,
+            re.S,
+        ):
+            link = m.group(1).strip()
+            title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", m.group(2))).strip()
+            if len(title) > 28 and link not in seen:
+                seen.add(link)
+                items.append(
+                    {
+                        "title": title,
+                        "link": link,
+                        "pubDate": "",
+                        "source": "Gasgoo China Automotive News",
+                    }
                 )
             if len(items) >= max_items:
                 break
@@ -461,6 +506,9 @@ def collect_daily_bundle(
         "CHINA_AUTOMOTRIZ": "China automaker BYD OR Geely OR Chery OR SAIC OR GAC production exports supplier",
         "INDIA_Y_ASIA": "India Japan Korea automaker Tata Motors OR Mahindra OR Maruti Suzuki OR Toyota OR Hyundai production",
         "FUNDICION_HPDC_COMPETIDORES": "aluminum die casting HPDC Nemak OR Handtmann OR Buhler OR Ryobi OR Ahresty OR foundry",
+        "GIGACASTING_Y_DIECASTING_WEEKLY": '"gigacasting" OR "giga-casting" OR "mega-casting" OR "Die-Casting Weekly" OR "Die Casting Weekly" aluminum automotive',
+        "INYECTORAS_Y_LINKEDIN_INDUSTRIA": 'site:linkedin.com ("IDRA Group" OR "Buhler" OR "LK Machinery" OR "Italpresse Gauss" OR "YIZUMI" OR "Nemak" OR "Handtmann" OR "GF Casting" OR "gigacasting" OR "die casting")',
+        "GASGOO_CHINA_AUTOMOTIVE": 'site:gasgoo.com OR "Gasgoo" China automotive EV aluminum supplier production',
         "IA_ROBOTICA_MANUFACTURA": "industrial robotics AI manufacturing ABB OR FANUC OR KUKA OR Siemens OR Rockwell OR CNC automation",
         "PETROLEO_GAS_FLETES": "Brent WTI oil price OPEC shipping freight Red Sea LNG energy market",
     }
@@ -522,6 +570,7 @@ def collect_daily_bundle(
         fut_bra = pool.submit(fetch_brazil_indicators)
         fut_com = pool.submit(fetch_commodities)
         fut_autodata = pool.submit(fetch_autodata_direct, 8)
+        fut_gasgoo = pool.submit(fetch_gasgoo_direct, 6)
 
         feed_futures = {}
         for key, q in bing_queries.items():
@@ -535,6 +584,7 @@ def collect_daily_bundle(
         brasil_data = fut_bra.result()
         commodities_data = fut_com.result()
         autodata_items = fut_autodata.result()
+        gasgoo_items = fut_gasgoo.result()
 
         for fut in as_completed(feed_futures):
             topic = feed_futures[fut]
@@ -556,6 +606,14 @@ def collect_daily_bundle(
             and not is_duplicate_title(it.get("title", ""), prev_titles)
         ]
         news_by_topic["BRASIL_AUTODATA_DIRECTO"] = autodata_clean
+
+        gasgoo_clean = [
+            it
+            for it in gasgoo_items
+            if it.get("link") not in prev_urls
+            and not is_duplicate_title(it.get("title", ""), prev_titles)
+        ]
+        news_by_topic["CHINA_GASGOO_DIRECTO"] = gasgoo_clean
 
         enrich_futs = [
             pool.submit(_enrich_with_excerpts, items, 2)

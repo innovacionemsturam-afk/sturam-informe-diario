@@ -51,8 +51,10 @@ REGLAS OBLIGATORIAS DE COBERTURA Y VOLUMEN:
      máximo {MAX_NEWS_PER_EDITION}).
    - Es OBLIGATORIO recorrer todas las regiones y categorías presentes en `news_candidates`:
      * ARGENTINA (mínimo 2 noticias: #01 cuadro completo de divisas BNA, mayorista, A3500 SML BCB,
-       MEP, CCL, tasas BCRA TAMAR y adelantos, IPC INDEC y riesgo país/Merval; #02+ actividad
-       industrial, UIA, ADEFA, AFAC, ADIMRA, energía o política económica).
+       MEP, CCL, tasas oficiales del BCRA: OBLIGATORIO informar TAMAR bancos privados en % TNA y TEA,
+       BADLAR bancos privados en % TNA y TEA, y tasa de adelantos en cuenta corriente en % TNA con su
+       fecha exacta, IPC INDEC y riesgo país/Merval; #02+ actividad industrial, UIA, ADEFA, AFAC,
+       ADIMRA, energía o política económica).
      * CÓRDOBA, ARGENTINA (1 a 2 noticias sobre UOM, SMATA, metalúrgicas o automotrices cordobesas).
      * BRASIL (3 a 4 noticias: #1 Dólar PTAX comprador/vendedor, variación % y Selic Copom;
        #2 a #4 noticias industriales de AutoData, ANFAVEA, Sindipeças, Volkswagen, Toyota,
@@ -85,7 +87,8 @@ REGLAS OBLIGATORIAS DE COBERTURA Y VOLUMEN:
 4. ANTI-DUPLICACIÓN Y NOTAS DE VALIDACIÓN:
    - NO repetir noticias cuyos hechos específicos ya figuren en `recent_sent_titles_to_avoid`.
    - Incluir 8 bloques temáticos en `strategic_summary` (comenzando Financiación y divisas con
-     "Datos correspondientes al CIERRE DEL DÍA HÁBIL ANTERIOR, <closing_date>:").
+     "Datos correspondientes al CIERRE DEL DÍA HÁBIL ANTERIOR, <closing_date>:" e incluyendo
+     obligatoriamente TAMAR, BADLAR, adelantos y Dólar Oficial A3500).
    - Incluir exactamente 5 prioridades en `top_five_analysis`.
    - Incluir 5 párrafos detallados en `validation_notes` (fecha de cierre, titulares previos
      cotejados y excluidos, relevamiento UOM/SMATA, nómina de las fuentes consultadas y
