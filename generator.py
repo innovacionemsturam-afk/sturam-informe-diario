@@ -17,6 +17,9 @@ EXCLUDED_MODEL_TAGS = (
     "2.5",
     "2.0",
     "1.5",
+    "1.0",
+    "nano-banana",
+    "omni",
     "embedding",
     "image",
     "tts",
@@ -28,13 +31,17 @@ EXCLUDED_MODEL_TAGS = (
     "imagen",
     "customtools",
     "bisect",
+    "aqa",
 )
 
 PREFERRED_MODELS = [
     "gemini-3.8-flash",
-    "gemini-3.8-pro",
     "gemini-3.6-flash",
     "gemini-3.5-flash",
+    "gemini-4-hydrogen",
+    "gemini-3.8-pro",
+    "gemini-3.6-pro",
+    "gemini-3.5-pro",
 ]
 
 SYSTEM_INSTRUCTION = f"""
@@ -120,9 +127,11 @@ def _discover_fallback_models(client: genai.Client, exclude: str) -> list[str]:
         pass
 
     ordered = [m for m in PREFERRED_MODELS if m in standard and m != exclude]
-    rem_std = sorted((m for m in standard if m not in ordered), reverse=True)
+    rem_std = sorted(m for m in standard if m not in ordered)
     rem_lite = sorted(lite_models, reverse=True)
-    return (ordered + rem_std + rem_lite)[:8]
+    all_candidates = ordered + rem_lite + rem_std
+    print(f"Modelos candidatos descubiertos ({len(all_candidates)}): {all_candidates}")
+    return all_candidates
 
 
 def generate_report_json(
@@ -216,18 +225,16 @@ def generate_report_json(
             except errors.APIError as exc:
                 last_exc = exc
                 code = getattr(exc, "code", None)
-                msg = str(exc)
-                if code == 429 and "limit: 0" in msg:
-                    break
-                if code in (429, 500, 503):
-                    time.sleep(5 * (attempt + 1))
+                print(f"  -> {model_name} devolvió HTTP {code}: {str(exc)[:140]}")
+                if code in (500, 503):
+                    time.sleep(4 * (attempt + 1))
                     continue
-                if code == 404:
-                    break
-                raise
+                # Ante 429 (cuota 0 en Free Tier), 404 o 400, saltar de inmediato al siguiente modelo
+                break
             except Exception as exc:
                 last_exc = exc
-                continue
+                print(f"  -> {model_name} error: {str(exc)[:140]}")
+                break
 
     if best_partial and len(best_partial.get("stories", [])) >= 8:
         return best_partial
