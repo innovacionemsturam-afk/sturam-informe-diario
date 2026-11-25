@@ -2,7 +2,8 @@
   "sent_dates": [
     "2026-11-20",
     "2026-11-23",
-    "2026-11-24"
+    "2026-11-24",
+    "2026-11-25"
   ],
   "recent_titles": [
     "La devaluación de Brasil impacta en la industria y las economías regionales argentinas",
@@ -18,6 +19,13 @@
     "La metalurgia registra su peor octubre desde 2016",
     "LME aluminium cash offer price falls 4.4%",
     "Oil Prices Hold Near Three-Month Lows",
-    "ABB Robotics is Supplying More than 1,700 Robots for New Vehicle Production"
+    "ABB Robotics is Supplying More than 1,700 Robots for New Vehicle Production",
+    "Divisas, riesgo país e indicadores financieros del último cierre",
+    "Variación en el precio del aluminio LME"
+  ],
+  "recent_urls": [
+    "https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables.asp",
+    "https://www.iprofesional.com",
+    "https://www.westmetall.com/en/markdaten.php?action=table&field=LME_Al_cash"
   ]
 }
